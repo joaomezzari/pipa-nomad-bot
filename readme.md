@@ -30,15 +30,14 @@ The bot is running on a Google Cloud VM with the following specifications:
 - **Instance Type**: e2-micro (2 vCPUs, 1 GB Memory)
 - **Operating System**: Ubuntu Server 24.04  
 - *Running environment:*
-- **Node.js Version**: v18.19.1
-- **Process Manager**: PM2 v5.4.3
-- **Project Directory**: `/home/joao_mezari/dn-pipa-whatsapp-bot`
+- **Node.js Version**: v20+
+- **Process Manager**: PM2, running as the dedicated `pipabot` system user
+- **Project Directory**: `/opt/pipa-dn-bot` (the code works from any directory)
 - **Database**: PostgreSQL (managed via Prisma ORM)
 - **Dependencies**:
-  - `@whiskeysockets/baileys@6.7.13`
-  - `moment-timezone@0.5.47`
-  - `qrcode-terminal@0.12.0`
-  - `whatsapp-web.js@1.26.0`
+  - `@whiskeysockets/baileys`
+  - `moment-timezone`
+  - `qrcode-terminal`
   - `@prisma/client` + `prisma`
 
 ## Installation
@@ -46,9 +45,8 @@ The bot is running on a Google Cloud VM with the following specifications:
 ### Prerequisites
 
 Ensure you have the following installed:
-- [Node.js](https://nodejs.org/)
-- [npm](https://www.npmjs.com/) (comes with Node.js)
-- [pm2](https://pm2.keymetrics.io/)
+- [Node.js](https://nodejs.org/) 20+ and npm
+- [pm2](https://pm2.keymetrics.io/) (`sudo npm install -g pm2`)
 - [PostgreSQL](https://www.postgresql.org/) 14+
 
 ### PostgreSQL Setup
@@ -71,46 +69,56 @@ Ensure you have the following installed:
    \q
    ```
 
-3. Set the `DATABASE_URL` in your `.env` file:
-   ```
-   DATABASE_URL="postgresql://botuser:your_password@localhost:5432/DNBot-DB?schema=public"
-   ```
-
-4. Run Prisma migrations to create all tables:
-   ```sh
-   npx prisma migrate deploy
-   ```
-
 ### Setup
 
-1. Clone the repository:
+1. Clone the repository (any location works, `/opt/pipa-dn-bot` is used in production):
    ```sh
-   git clone https://github.com/nomads-pipa/bot.git
-   cd bot
+   sudo mkdir /opt/pipa-dn-bot && sudo chown $USER /opt/pipa-dn-bot
+   git clone git@github.com:nomads-pipa/bot.git /opt/pipa-dn-bot
+   cd /opt/pipa-dn-bot
    ```
 
-2. Install dependencies:
-   ```sh
-   npm install
-   ```
+2. Create `.env` from `.env.example` and fill it in:
+   - `DATABASE_URL`: PostgreSQL connection string, e.g. `postgresql://botuser:your_password@localhost:5432/DNBot-DB?schema=public`
+   - `OPENROUTER_API_KEY`: for Natal/city transfer LLM parsing
+   - `STORMGLASS_API_KEY`: for tide data
+   - `APIVERVE_API_KEY`: for astronomical data
+   - `GROUP_NAMES`: comma-separated WhatsApp group names to monitor
 
-3. Create a `.env` file in the project root directory (check `.env.example`):
-   - `DATABASE_URL` — PostgreSQL connection string (see above)
-   - `OPENROUTER_API_KEY` — for Natal transfer LLM parsing
-   - `STORMGLASS_API_KEY` — for tide data
-   - `APIVERVE_API_KEY` — for astronomical data
-   - `GROUP_NAMES` — comma-separated WhatsApp group names to monitor
-
-4. Start the bot:
+3. Run the setup script:
    ```sh
-   node pipa-dn-bot.js
+   sudo ./scripts/server-setup.sh
    ```
+   It creates the `pipabot` user, sets permissions, installs dependencies, runs the
+   database migrations, configures log rotation and starts the bot under pm2 with a
+   boot service. It is safe to re-run.
+
+4. On a brand-new WhatsApp session, scan the QR code printed in `logs/pm2-out.log`
+   (WhatsApp > Linked devices). To move an existing session, stop the old bot and
+   copy its `auth_info/` into the new directory **before** running the setup script.
+   Never run two instances with the same session.
+
+### Runtime files
+
+| Path | Contents |
+|------|----------|
+| `auth_info/` | WhatsApp session (keep it secret, back it up) |
+| `data/keywords.json` | Live keyword responses, seeded from `keywords.default.json` on first start |
+| `logs/` | pm2 output and daily log files (`LOG_DIRECTORY` overrides the latter) |
+
+### Deploying
+
+Pushing to `main` triggers the GitHub Action, which SSHes into the server, runs
+`git pull` and then `scripts/deploy.sh` (`npm ci`, migrations, pm2 reload). The
+`APP_DIR` secret must point at the clone.
 
 ## Configuration
 
 ### Keywords
 
-The bot responds to predefined keywords stored in `keywords.json`. Ensure this file is in the same directory as `pipa-dn-bot.js` and formatted as follows:
+The bot responds to keywords stored in `data/keywords.json`. On first start it is
+created from the tracked `keywords.default.json`; after that, edits made from the
+WhatsApp group are saved there and are never touched by `git pull`. The format is:
 
 ```json
 [

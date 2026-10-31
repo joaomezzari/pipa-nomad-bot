@@ -22,7 +22,9 @@ jobs:
           APP_DIR: ${{ secrets.APP_DIR }}
         run: |
           ssh -o StrictHostKeyChecking=no ${SERVER_USER}@${SERVER_IP} << ENDSSH
+            set -e
             cd ${APP_DIR}
+            umask 002
             git pull origin main
-            sudo pm2 restart pipa-dn-bot.js
+            ./scripts/deploy.sh
           ENDSSH

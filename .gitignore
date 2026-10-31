@@ -5,3 +5,4 @@ claude.md
 data/
 
 /generated/prisma
+logs/

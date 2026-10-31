@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { defineConfig, env } from "prisma/config";
+import { defineConfig } from "prisma/config";
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
@@ -8,6 +8,8 @@ export default defineConfig({
   },
   engine: "classic",
   datasource: {
-    url: env("DATABASE_URL"),
+    // Not env("DATABASE_URL"): that throws when unset, which breaks `prisma generate`
+    // (run on npm install) on a fresh clone before .env exists. Migrate still needs it.
+    url: process.env.DATABASE_URL ?? "",
   },
 });

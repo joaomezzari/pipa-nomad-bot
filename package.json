@@ -1,12 +1,21 @@
 {
+  "name": "pipa-dn-bot",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node pipa-dn-bot.js",
+    "postinstall": "prisma generate",
+    "db:migrate": "prisma migrate deploy"
+  },
   "dependencies": {
-    "@anthropic-ai/claude-code": "^2.0.42",
     "@prisma/client": "^6.19.0",
     "@whiskeysockets/baileys": "^6.7.18",
     "dotenv": "^16.4.7",
     "moment-timezone": "^0.5.47",
+    "pino": "^9.7.0",
     "prisma": "^6.19.0",
-    "qrcode-terminal": "^0.12.0",
-    "whatsapp-web.js": "^1.26.0"
+    "qrcode-terminal": "^0.12.0"
   }
 }

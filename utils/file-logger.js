@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const moment = require('moment-timezone');
 require('dotenv').config();
+const { LOG_DIR, FALLBACK_LOG_DIR } = require('./paths');
 
 /**
  * Creates a logger that writes to both console and a log file
@@ -10,9 +11,7 @@ require('dotenv').config();
  */
 function createFileLogger(logDir) {
     // Get log directory from .env file or use default
-    let logDirectory = logDir || 
-                       process.env.LOG_DIRECTORY || 
-                       '/var/log/pipa-dn-bot/console-logs';
+    let logDirectory = logDir || LOG_DIR;
     
     // Ensure the log directory exists
     if (!fs.existsSync(logDirectory)) {
@@ -21,7 +20,7 @@ function createFileLogger(logDir) {
         } catch (err) {
             console.error(`Failed to create log directory at ${logDirectory}:`, err);
             // Fall back to a directory that should be writable
-            const fallbackDir = path.join(process.cwd(), 'logs');
+            const fallbackDir = FALLBACK_LOG_DIR;
             console.warn(`Falling back to ${fallbackDir}`);
             if (!fs.existsSync(fallbackDir)) {
                 fs.mkdirSync(fallbackDir, { recursive: true });

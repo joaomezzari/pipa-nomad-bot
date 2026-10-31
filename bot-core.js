@@ -14,6 +14,7 @@ const { createFileLogger } = require('./utils/file-logger');
 const { initCityTransfer, processCityTransferMessage, isCityTransferMessage } = require('./utils/city-transfer-db');
 const { initTaxiRide, processTaxiMessage } = require('./taxi-feature');
 const { initDriverRegistration, processDriverRegistrationMessage } = require('./utils/taxi-drivers-register');
+const { AUTH_DIR } = require('./utils/paths');
 
 // Initialize our custom logger (will use LOG_DIRECTORY from .env if available)
 const logger = createFileLogger();
@@ -29,7 +30,7 @@ const recentResponses = new Map();
 const THROTTLE_PERIOD = 6 * 60 * 60 * 1000;
 
 async function startBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info');
+    const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
     const pinoLogger = pino({ level: 'info' });
 
     const { version, isLatest } = await fetchLatestBaileysVersion();

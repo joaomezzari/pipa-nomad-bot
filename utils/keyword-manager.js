@@ -1,6 +1,11 @@
 const fs = require('fs');
 const path = require('path');
-const keywordFilePath = path.join(__dirname, '..', 'keywords.json');
+const { ROOT, DATA_DIR } = require('./paths');
+
+// Live keywords are edited from the group, so they live in data/ (untracked).
+// The tracked keywords.default.json only seeds a fresh install.
+const keywordFilePath = path.join(DATA_DIR, 'keywords.json');
+const defaultKeywordFilePath = path.join(ROOT, 'keywords.default.json');
 
 /**
  * Load keyword responses from JSON file
@@ -8,6 +13,10 @@ const keywordFilePath = path.join(__dirname, '..', 'keywords.json');
  */
 function loadKeywordResponses() {
     try {
+        if (!fs.existsSync(keywordFilePath)) {
+            fs.mkdirSync(DATA_DIR, { recursive: true });
+            fs.copyFileSync(defaultKeywordFilePath, keywordFilePath);
+        }
         const data = fs.readFileSync(keywordFilePath, 'utf-8');
         return JSON.parse(data);
     } catch (err) {

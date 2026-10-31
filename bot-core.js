@@ -15,6 +15,7 @@ const { initCityTransfer, processCityTransferMessage, isCityTransferMessage } = 
 const { initTaxiRide, processTaxiMessage } = require('./taxi-feature');
 const { initDriverRegistration, processDriverRegistrationMessage } = require('./utils/taxi-drivers-register');
 const { AUTH_DIR } = require('./utils/paths');
+const { isFeatureEnabled, describeFeatureFlags } = require('./utils/feature-flags');
 
 // Initialize our custom logger (will use LOG_DIRECTORY from .env if available)
 const logger = createFileLogger();
@@ -28,6 +29,9 @@ const recentResponses = new Map();
 
 // Throttle period in milliseconds (6 hours)
 const THROTTLE_PERIOD = 6 * 60 * 60 * 1000;
+
+// Group that receives the daily tide/astronomy/wave messages
+const MAIN_GROUP_NAME = (process.env.MAIN_GROUP_NAME || 'Pipa Digital Nomads').trim();
 
 // Messages we sent recently, so Baileys can re-encrypt and resend them when a
 // recipient device fails to decrypt (otherwise they see "Waiting for this message")
@@ -95,18 +99,25 @@ async function startBot() {
             }
         } else if (connection === 'open') {
             logger.info('✅ Connected successfully');
+            logger.info(`🚩 Features: ${describeFeatureFlags()}`);
 
             // Initialize the city transfer module (Natal, Recife, João Pessoa)
-            await initCityTransfer();
-            logger.info('✅ City transfer module initialized');
+            if (isFeatureEnabled('cityTransfer')) {
+                await initCityTransfer();
+                logger.info('✅ City transfer module initialized');
+            }
 
             // Initialize the Taxi ride module
-            await initTaxiRide(sock);
-            logger.info('✅ Taxi ride module initialized');
+            if (isFeatureEnabled('taxi')) {
+                await initTaxiRide(sock);
+                logger.info('✅ Taxi ride module initialized');
+            }
 
             // Initialize the Driver registration module
-            await initDriverRegistration();
-            logger.info('✅ Driver registration module initialized');
+            if (isFeatureEnabled('driverRegistration')) {
+                await initDriverRegistration();
+                logger.info('✅ Driver registration module initialized');
+            }
 
             // Get group names from environment variable
             const groupNames = getGroupNamesFromEnv();
@@ -126,13 +137,15 @@ async function startBot() {
                 if (groupId) {
                     logger.info(`✅ Group "${groupName}" found with ID: ${groupId}`);
                     
-                    // For backward compatibility, check if this is the Pipa Digital Nomads group
-                    if (groupName === "Pipa Digital Nomads") {
+                    // Daily messages go to the main group only
+                    if (groupName === MAIN_GROUP_NAME) {
                         setupSchedulers(sock, groupId);
                     }
                     
                     // Set up group participant handler for all groups
-                    setupGroupParticipantHandler(sock, groupId);
+                    if (isFeatureEnabled('welcomeMessage')) {
+                        setupGroupParticipantHandler(sock, groupId);
+                    }
                 } else {
                     logger.warn(`🚫 Group "${groupName}" not found`);
                 }
@@ -264,10 +277,11 @@ function setupMessageHandler(sock, groupMap) {
 
                         // Check if this is a city transfer message (Natal, Recife, João Pessoa)
                         const pushName = message.pushName || '';
-                        const isCityTransfer = await processCityTransferMessage(sock, messageContent, sender, remoteJid, pushName);
+                        const isCityTransfer = isFeatureEnabled('cityTransfer') &&
+                            await processCityTransferMessage(sock, messageContent, sender, remoteJid, pushName);
 
                         // If not a city transfer message, check for other keyword matches
-                        if (!isCityTransfer) {
+                        if (!isCityTransfer && isFeatureEnabled('keywordResponses')) {
                             // Check for keyword matches
                             for (const { keywords, response } of keywordResponseMap) {
                                 let matched = false;
@@ -312,10 +326,11 @@ function setupMessageHandler(sock, groupMap) {
                     logger.info(`📩 Received private message from ${sender}`);
 
                     // First, check if this is a driver registration message
-                    const isRegistrationHandled = await processDriverRegistrationMessage(sock, message, sender);
+                    const isRegistrationHandled = isFeatureEnabled('driverRegistration') &&
+                        await processDriverRegistrationMessage(sock, message, sender);
 
                     // If not handled by registration, process as taxi conversation
-                    if (!isRegistrationHandled) {
+                    if (!isRegistrationHandled && isFeatureEnabled('taxi')) {
                         await processTaxiMessage(sock, message, sender, null);
                     }
                 }

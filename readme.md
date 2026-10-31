@@ -16,6 +16,7 @@ The bot requires a dedicated WhatsApp account to operate, as it emulates WhatsAp
 - **Natal/Pipa Transfer On-Demand**: Members can request a scheduled Natal↔Pipa transfer directly via WhatsApp DM. Supports both directions (Natal→Pipa and Pipa→Natal), collects pickup date/time and address, and broadcasts the request to registered transfer drivers only. (Recife and João Pessoa on-demand transfers are planned)
 - **Taxi & Mototaxi On-Demand**: Members can request a taxi or mototaxi directly via WhatsApp DM. The bot broadcasts the request to registered drivers, who can accept via DM. Fully independent module.
 - **Driver Self-Registration**: Drivers (taxi or mototaxi) register themselves through a WhatsApp DM conversation with the bot. They provide name, phone, CPF, and vehicle type, and are stored in the database to receive ride broadcasts.
+- **Daily Group Summary** (`FF_GROUP_HISTORY=true`): Keeps the last days of text messages of the monitored groups (`GROUP_HISTORY_RETENTION_DAYS`, default 7) and every day at 05:00 posts a short LLM digest of the last 24h in each group.
 - **Throttling**: It throtlles messages in a timespam to prevent spammimg
 - **Automatic Reconnection**: If the bot disconnects, it attempts to reconnect automatically.
 

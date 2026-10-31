@@ -1,0 +1,42 @@
+# Local run in Docker: PostgreSQL + bot.
+#   docker compose up --build
+# Settings come from .env; the values below override what must differ inside Docker.
+services:
+  db:
+    # Postgres 16 with pgvector: the knowledge-base platform (nomad-kb) uses the same database
+    image: pgvector/pgvector:pg16-trixie
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pipa_local}
+      POSTGRES_DB: DNBot-DB
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    # Exposed for local development of nomad-kb (localhost:5434)
+    ports:
+      - "127.0.0.1:5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d DNBot-DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-pipa_local}@db:5432/DNBot-DB?schema=public
+      AUTH_DIR: /data/auth_info
+      # /app is read-only for the node user; keep daily log files on the data volume
+      LOG_DIRECTORY: /data/logs
+      TZ: America/Sao_Paulo
+    volumes:
+      - bot-data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:
+  bot-data:

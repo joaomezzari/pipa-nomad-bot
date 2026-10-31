@@ -9,7 +9,8 @@ const {
     loadKeywordResponses,
     generateWelcomeMessage
 } = require('./utils/keyword-manager');
-const { setupSchedulers } = require('./schedulers');
+const { setupSchedulers, scheduleGroupSummary } = require('./schedulers');
+const { isGroupHistoryEnabled, initGroupHistory, recordGroupMessage } = require('./group-history');
 const { createFileLogger } = require('./utils/file-logger');
 const { initCityTransfer, processCityTransferMessage, isCityTransferMessage } = require('./utils/city-transfer-db');
 const { initTaxiRide, processTaxiMessage } = require('./taxi-feature');
@@ -138,6 +139,12 @@ async function startBot() {
                 }
             }
 
+            // Store group messages in the database and send their daily summary (FF_GROUP_HISTORY)
+            if (isGroupHistoryEnabled()) {
+                initGroupHistory();
+                scheduleGroupSummary(sock, groupMap);
+            }
+
             // Set up message handler for all groups
             setupMessageHandler(sock, groupMap);
         } else if (connection === 'connecting') {
@@ -261,6 +268,11 @@ function setupMessageHandler(sock, groupMap) {
                         // Find which group this is
                         const groupName = Object.keys(groupMap).find(name => groupMap[name] === remoteJid);
                         logger.info(`📩 Received message in group "${groupName}": ${messageContent}`);
+
+                        // Group history (FF_GROUP_HISTORY): store the message for the daily summary
+                        if (isGroupHistoryEnabled()) {
+                            await recordGroupMessage(remoteJid, message, messageContent);
+                        }
 
                         // Check if this is a city transfer message (Natal, Recife, João Pessoa)
                         const pushName = message.pushName || '';

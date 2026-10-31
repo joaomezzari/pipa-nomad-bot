@@ -2,6 +2,7 @@ const moment = require('moment-timezone');
 const { sendTideDataFromDbOnce, fetchAndSaveTideData } = require('../commands/tide');
 const { sendAstronomyDataOnce } = require('../commands/astro');
 const { sendWaveDataOnce } = require('../commands/wave');
+const { isFeatureEnabled } = require('../utils/feature-flags');
 
 /**
  * Schedule the daily Stormglass fetch + DB save for tide extremes. Runs ahead of
@@ -88,11 +89,17 @@ function scheduleWaveData(sock, chatId, time = '19:30') {
  * @param {String} chatId - Chat ID to send messages to
  */
 function setupSchedulers(sock, chatId) {
-    // Setting all schedulers
-    scheduleTideSave();
-    scheduleTideData(sock, chatId);
-    scheduleAstronomyData(sock, chatId);
-    // scheduleWaveData(sock, chatId, '19:30');
+    // Setting all enabled schedulers
+    if (isFeatureEnabled('tideDaily')) {
+        scheduleTideSave();
+        scheduleTideData(sock, chatId);
+    }
+    if (isFeatureEnabled('astronomyDaily')) {
+        scheduleAstronomyData(sock, chatId);
+    }
+    if (isFeatureEnabled('waveDaily')) {
+        scheduleWaveData(sock, chatId, '19:30');
+    }
 
     console.log('📆 All schedulers initialized successfully');
 }

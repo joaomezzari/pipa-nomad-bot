@@ -39,6 +39,18 @@ const sentMessages = new Map();
 const SENT_MESSAGES_MAX = 1000;
 const SENT_MESSAGES_TTL = 24 * 60 * 60 * 1000;
 
+// When a message can't be decrypted, Baileys waits 5 s and asks our own phone to resend
+// it. If the session with the phone is out of sync, the phone's answer can't be decrypted
+// either, which triggers another request, every 5 s for as long as the phone is online.
+// Reporting every message as "already requested" turns that request off. A message we
+// can't decrypt is then just missed, as it would be without the phone's copy anyway.
+const noPhoneResendCache = {
+    get: () => true,
+    set: () => true,
+    del: () => 0,
+    flushAll: () => {}
+};
+
 function rememberSentMessage(id, message) {
     const now = Date.now();
     sentMessages.set(id, { message, ts: now });
@@ -66,6 +78,7 @@ async function startBot() {
             logger.info(`🔁 Retry requested for message ${key.id}: ${message ? 'resending' : 'not in cache'}`);
             return message;
         },
+        placeholderResendCache: noPhoneResendCache,
         // Remove this deprecated option
         // printQRInTerminal: true
     });

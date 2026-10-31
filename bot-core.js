@@ -29,6 +29,22 @@ const recentResponses = new Map();
 // Throttle period in milliseconds (6 hours)
 const THROTTLE_PERIOD = 6 * 60 * 60 * 1000;
 
+// Messages we sent recently, so Baileys can re-encrypt and resend them when a
+// recipient device fails to decrypt (otherwise they see "Waiting for this message")
+const sentMessages = new Map();
+const SENT_MESSAGES_MAX = 1000;
+const SENT_MESSAGES_TTL = 24 * 60 * 60 * 1000;
+
+function rememberSentMessage(id, message) {
+    const now = Date.now();
+    sentMessages.set(id, { message, ts: now });
+    // Map keeps insertion order, so the oldest entries come first
+    for (const [key, entry] of sentMessages) {
+        if (sentMessages.size <= SENT_MESSAGES_MAX && now - entry.ts < SENT_MESSAGES_TTL) break;
+        sentMessages.delete(key);
+    }
+}
+
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
     const pinoLogger = pino({ level: 'info' });
@@ -40,11 +56,26 @@ async function startBot() {
         auth: state,
         logger: pinoLogger,
         version,
+        // Lets Baileys answer retry receipts by resending the original message
+        getMessage: async (key) => {
+            const message = sentMessages.get(key.id)?.message;
+            logger.info(`🔁 Retry requested for message ${key.id}: ${message ? 'resending' : 'not in cache'}`);
+            return message;
+        },
         // Remove this deprecated option
         // printQRInTerminal: true
     });
 
     sock.ev.on('creds.update', saveCreds);
+
+    // Our own sends come back as 'append' upserts
+    sock.ev.on('messages.upsert', ({ messages }) => {
+        for (const m of messages) {
+            if (m.key.fromMe && m.key.id && m.message) {
+                rememberSentMessage(m.key.id, m.message);
+            }
+        }
+    });
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;

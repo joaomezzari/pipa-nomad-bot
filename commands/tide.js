@@ -140,7 +140,8 @@ async function getTideMessageFromDb() {
 async function sendTideDataFromDbOnce(sock, chatId) {
     try {
         const tideMessage = await getTideMessageFromDb();
-        await sock.sendMessage(chatId, { text: tideMessage });
+        // The stormglass.io credit link would otherwise get a link preview card
+        await sock.sendMessage(chatId, { text: tideMessage, linkPreview: null });
         console.log('✅ Tide data (from DB) sent successfully');
     } catch (error) {
         console.error('❌ Error sending tide data from DB:', error);

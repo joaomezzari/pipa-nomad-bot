@@ -139,7 +139,8 @@ async function getAstronomyData(maxRetries = 3, delayMs = 20000, longRetryDelayM
 async function sendAstronomyDataOnce(sock, chatId, maxRetries = 3, delayMs = 20000, longRetryDelayMs = 1800000) {
     try {
         const result = await getAstronomyData(maxRetries, delayMs, longRetryDelayMs);
-        await sock.sendMessage(chatId, { text: result.message });
+        // Keep the daily post free of link preview cards, same as the tide message
+        await sock.sendMessage(chatId, { text: result.message, linkPreview: null });
         console.log('✅ Astronomy data sent successfully');
         
         // Log if it's a special full moon event

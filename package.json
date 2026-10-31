@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",
-    "@whiskeysockets/baileys": "^6.7.18",
+    "@whiskeysockets/baileys": "^6.7.24",
     "dotenv": "^16.4.7",
     "moment-timezone": "^0.5.47",
     "pino": "^9.7.0",

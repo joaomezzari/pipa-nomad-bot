@@ -269,3 +269,19 @@ model Rating {
   @@index([rateeDriverId])
   @@map("ratings")
 }
+
+// GroupMessage model - recent text messages of monitored groups, used only for the daily
+// summary. Rows older than GROUP_HISTORY_RETENTION_DAYS (default 7) are deleted.
+model GroupMessage {
+  id               Int      @id @default(autoincrement())
+  groupJid         String   // WhatsApp group JID (xxx@g.us)
+  messageId        String   // WhatsApp message key id
+  senderName       String?  // pushName at the time of sending
+  text             String
+  replyToMessageId String?  // messageId of the quoted message, if this is a reply
+  sentAt           DateTime
+
+  @@unique([groupJid, messageId])
+  @@index([groupJid, sentAt])
+  @@map("group_messages")
+}

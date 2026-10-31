@@ -2,6 +2,9 @@ const moment = require('moment-timezone');
 const { sendTideDataFromDbOnce, fetchAndSaveTideData } = require('../commands/tide');
 const { sendAstronomyDataOnce } = require('../commands/astro');
 const { sendWaveDataOnce } = require('../commands/wave');
+const { sendGroupSummary } = require('../group-history');
+
+let summaryIntervalId = null;
 
 /**
  * Schedule the daily Stormglass fetch + DB save for tide extremes. Runs ahead of
@@ -83,6 +86,31 @@ function scheduleWaveData(sock, chatId, time = '19:30') {
 }
 
 /**
+ * Schedule the daily summary of every monitored group. Safe to call again on every
+ * reconnect: the previous timer is replaced.
+ * @param {Object} sock - WhatsApp socket connection
+ * @param {Object} groupMap - Group name -> group ID (null if not found)
+ * @param {String} time - Time to post the summary (HH:MM format)
+ */
+function scheduleGroupSummary(sock, groupMap, time = '05:00') {
+    if (summaryIntervalId) clearInterval(summaryIntervalId);
+    summaryIntervalId = setInterval(async () => {
+        const currentTime = moment().tz('America/Sao_Paulo').format('HH:mm');
+        if (currentTime !== time) return;
+        console.log('📅 Posting scheduled group summaries...');
+        for (const [groupName, groupId] of Object.entries(groupMap)) {
+            if (!groupId) continue;
+            try {
+                await sendGroupSummary(sock, groupName, groupId);
+            } catch (error) {
+                console.error(`❌ Error posting daily summary in group "${groupName}":`, error);
+            }
+        }
+    }, 60 * 1000); // Check every minute
+    console.log(`🕒 Group summary scheduler set for ${time} daily`);
+}
+
+/**
  * Set up all scheduled tasks
  * @param {Object} sock - WhatsApp socket connection 
  * @param {String} chatId - Chat ID to send messages to
@@ -102,5 +130,6 @@ module.exports = {
     scheduleTideData,
     scheduleAstronomyData,
     scheduleWaveData,
+    scheduleGroupSummary,
     setupSchedulers
 };

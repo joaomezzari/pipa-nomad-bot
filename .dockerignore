@@ -1,0 +1,11 @@
+node_modules
+auth_info
+data
+logs
+.env
+.git
+.github
+.DS_Store
+npm-debug.log
+Dockerfile
+docker-compose.yml

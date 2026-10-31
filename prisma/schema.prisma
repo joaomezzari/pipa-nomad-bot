@@ -269,3 +269,17 @@ model Rating {
   @@index([rateeDriverId])
   @@map("ratings")
 }
+
+// MemberActivity model - when each group member was first seen and last posted,
+// used by the admin "!inactive" command
+model MemberActivity {
+  id            Int       @id @default(autoincrement())
+  groupJid      String    // WhatsApp group JID (xxx@g.us)
+  userJid       String    // member ID as the group reports it (phone JID or anonymous LID)
+  name          String?   // last known pushName
+  firstSeenAt   DateTime  @default(now()) // when the bot first saw the member in the group
+  lastMessageAt DateTime? // last message in the group; null = no message seen yet
+
+  @@unique([groupJid, userJid])
+  @@map("member_activity")
+}

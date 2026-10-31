@@ -15,6 +15,7 @@ const { initCityTransfer, processCityTransferMessage, isCityTransferMessage } = 
 const { initTaxiRide, processTaxiMessage } = require('./taxi-feature');
 const { initDriverRegistration, processDriverRegistrationMessage } = require('./utils/taxi-drivers-register');
 const { AUTH_DIR } = require('./utils/paths');
+const { isInactiveMembersEnabled, syncGroupMembers, addGroupMembers, recordMemberMessage, handleAdminCommand } = require('./member-activity');
 
 // Initialize our custom logger (will use LOG_DIRECTORY from .env if available)
 const logger = createFileLogger();
@@ -138,6 +139,11 @@ async function startBot() {
                 }
             }
 
+            // Track when each member last posted (admin "!inactive" command, FF_INACTIVE_MEMBERS)
+            if (isInactiveMembersEnabled()) {
+                setupMemberActivityTracking(sock, groupMap);
+            }
+
             // Set up message handler for all groups
             setupMessageHandler(sock, groupMap);
         } else if (connection === 'connecting') {
@@ -217,6 +223,18 @@ function setupGroupParticipantHandler(sock, groupId) {
     });
 }
 
+function setupMemberActivityTracking(sock, groupMap) {
+    const groupIds = new Set(Object.values(groupMap).filter(id => id !== null));
+
+    syncGroupMembers(sock, groupMap);
+
+    sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
+        if (action === 'add' && groupIds.has(id)) {
+            await addGroupMembers(id, participants);
+        }
+    });
+}
+
 function setupMessageHandler(sock, groupMap) {
     // Create a Set of group IDs for faster lookups
     const groupIds = new Set(Object.values(groupMap).filter(id => id !== null));
@@ -250,6 +268,11 @@ function setupMessageHandler(sock, groupMap) {
                 if (messageTimestamp < (botStartTime - 10000)) {
                     logger.info(`⏭️ Skipping old message from ${sender} (sent ${Math.round((botStartTime - messageTimestamp) / 1000)}s before bot start)`);
                     continue;
+                }
+
+                // Any message (text or media) counts as member activity (FF_INACTIVE_MEMBERS)
+                if (groupIds.has(remoteJid) && isInactiveMembersEnabled()) {
+                    await recordMemberMessage(remoteJid, message);
                 }
 
                 const messageContent = message.message.conversation ||
@@ -310,6 +333,11 @@ function setupMessageHandler(sock, groupMap) {
                 } else {
                     // This is a private message (not from a group)
                     logger.info(`📩 Received private message from ${sender}`);
+
+                    // Admin commands (FF_INACTIVE_MEMBERS): only admins, only in private chats
+                    if (isInactiveMembersEnabled() && await handleAdminCommand(sock, message, messageContent, groupMap)) {
+                        continue;
+                    }
 
                     // First, check if this is a driver registration message
                     const isRegistrationHandled = await processDriverRegistrationMessage(sock, message, sender);

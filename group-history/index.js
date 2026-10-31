@@ -1,6 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const moment = require('moment-timezone');
 const { createFileLogger } = require('../utils/file-logger');
+const { isAdminMessage, getSenderIds } = require('../utils/admin');
 
 const prisma = new PrismaClient();
 const logger = createFileLogger();
@@ -19,6 +20,8 @@ const MIN_MESSAGES = 3;
 const MAX_MESSAGE_CHARS = 500;
 const MAX_TRANSCRIPT_CHARS = 120000;
 const MAX_TOPICS = 5;
+
+const SUMMARY_COMMAND = /^[!/]summary$/i;
 
 let purgeTimer = null;
 
@@ -183,9 +186,51 @@ async function summarizeGroup(groupJid, groupName) {
   return `${header}\n\n${body.join('\n\n')}`;
 }
 
+/**
+ * Post the summary of a group's last 24h into that group.
+ * @returns {Promise<boolean>} true if a summary was posted, false if there was nothing to report
+ */
+async function sendGroupSummary(sock, groupName, groupId) {
+  const summary = await summarizeGroup(groupId, groupName);
+  if (!summary) return false;
+  await sock.sendMessage(groupId, { text: summary });
+  logger.info(`✅ Posted summary in group "${groupName}"`);
+  return true;
+}
+
+/**
+ * Handle "!summary" sent in a private chat with the bot: posts the summary of every monitored
+ * group into that group right away and reports the outcome to the admin. Commands from anyone
+ * who is not in ADMIN_IDS are ignored silently (logged).
+ * @returns {Promise<boolean>} true if the message was the command (handled or ignored)
+ */
+async function handleSummaryCommand(sock, message, text, groupMap) {
+  if (!SUMMARY_COMMAND.test((text || '').trim()) || message.key.fromMe) return false;
+
+  if (!isAdminMessage(message)) {
+    logger.warn(`⛔ Ignored !summary from non-admin ${getSenderIds(message).join(', ')}`);
+    return true;
+  }
+
+  const chatJid = message.key.remoteJid;
+  for (const [groupName, groupId] of Object.entries(groupMap)) {
+    if (!groupId) continue;
+    let outcome;
+    try {
+      outcome = await sendGroupSummary(sock, groupName, groupId) ? 'summary posted' : 'nothing to summarize in the last 24h';
+    } catch (err) {
+      logger.error(`❌ Error posting summary in group "${groupName}":`, err);
+      outcome = `failed: ${err.message}`;
+    }
+    await sock.sendMessage(chatJid, { text: `📋 ${groupName}: ${outcome}` });
+  }
+  return true;
+}
+
 module.exports = {
   isGroupHistoryEnabled,
   initGroupHistory,
   recordGroupMessage,
-  summarizeGroup
+  sendGroupSummary,
+  handleSummaryCommand
 };

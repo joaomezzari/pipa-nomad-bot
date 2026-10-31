@@ -10,7 +10,7 @@ const {
     generateWelcomeMessage
 } = require('./utils/keyword-manager');
 const { setupSchedulers, scheduleGroupSummary } = require('./schedulers');
-const { isGroupHistoryEnabled, initGroupHistory, recordGroupMessage } = require('./group-history');
+const { isGroupHistoryEnabled, initGroupHistory, recordGroupMessage, handleSummaryCommand } = require('./group-history');
 const { createFileLogger } = require('./utils/file-logger');
 const { initCityTransfer, processCityTransferMessage, isCityTransferMessage } = require('./utils/city-transfer-db');
 const { initTaxiRide, processTaxiMessage } = require('./taxi-feature');
@@ -322,6 +322,11 @@ function setupMessageHandler(sock, groupMap) {
                 } else {
                     // This is a private message (not from a group)
                     logger.info(`📩 Received private message from ${sender}`);
+
+                    // Admin "!summary" (FF_GROUP_HISTORY): post the summaries right away
+                    if (isGroupHistoryEnabled() && await handleSummaryCommand(sock, message, messageContent, groupMap)) {
+                        continue;
+                    }
 
                     // First, check if this is a driver registration message
                     const isRegistrationHandled = await processDriverRegistrationMessage(sock, message, sender);

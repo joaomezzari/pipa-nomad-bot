@@ -2,7 +2,7 @@ const moment = require('moment-timezone');
 const { sendTideDataFromDbOnce, fetchAndSaveTideData } = require('../commands/tide');
 const { sendAstronomyDataOnce } = require('../commands/astro');
 const { sendWaveDataOnce } = require('../commands/wave');
-const { summarizeGroup } = require('../group-history');
+const { sendGroupSummary } = require('../group-history');
 
 let summaryIntervalId = null;
 
@@ -83,16 +83,6 @@ function scheduleWaveData(sock, chatId, time = '19:30') {
     }, 60 * 1000); // Check every minute
     
     console.log(`🕒 Wave data scheduler set for ${time} daily`);
-}
-
-/**
- * Post the summary of a group's last 24h into that group (nothing is posted when there is nothing to report).
- */
-async function sendGroupSummary(sock, groupName, groupId) {
-    const summary = await summarizeGroup(groupId, groupName);
-    if (!summary) return;
-    await sock.sendMessage(groupId, { text: summary });
-    console.log(`✅ Posted summary in group "${groupName}"`);
 }
 
 /**

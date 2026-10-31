@@ -41,11 +41,21 @@ const CITY_CONFIGS = {
   },
 };
 
+// Whole-word match so "jp" doesn't hit "jpg" and "natal" doesn't hit "Natália" or "prenatal"
+function keywordRegex(keyword) {
+  const escaped = keyword.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`, 'u');
+}
+
+for (const config of Object.values(CITY_CONFIGS)) {
+  config.keywordRegexes = config.keywords.map(keywordRegex);
+}
+
 // Returns the city config if message matches any keyword, else null
 function detectCity(message) {
   const lowerMsg = message.toLowerCase();
   for (const config of Object.values(CITY_CONFIGS)) {
-    if (config.keywords.some(kw => lowerMsg.includes(kw.toLowerCase()))) {
+    if (config.keywordRegexes.some(re => re.test(lowerMsg))) {
       return config;
     }
   }
@@ -79,11 +89,6 @@ async function processCityTransferMessage(sock, message, sender, groupId, incomi
 
     logger.info(`OpenRouter parsed response: ${parsedRide}`);
 
-    if (parsedRide.includes('question intention')) {
-      logger.info(`Detected question intention from ${sender}, not registering ride`);
-      return false;
-    }
-
     const jsonMatch = parsedRide.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       logger.warn(`Failed to parse JSON from OpenRouter response: ${parsedRide}`);
@@ -92,11 +97,16 @@ async function processCityTransferMessage(sock, message, sender, groupId, incomi
 
     const rideInfo = JSON.parse(jsonMatch[0]);
 
+    if (rideInfo.intent !== 'offer') {
+      logger.info(`Message from ${sender} classified as "${rideInfo.intent}", not registering ride`);
+      return false;
+    }
+
     // Normalize direction
-    const dirLower = rideInfo.direction.toLowerCase();
-    if (dirLower.includes('to ') || dirLower.startsWith('to')) {
+    const dirLower = (rideInfo.direction || '').toLowerCase();
+    if (dirLower.startsWith('to')) {
       rideInfo.direction = 'toCity';
-    } else if (dirLower.includes('from ') || dirLower.startsWith('from')) {
+    } else if (dirLower.startsWith('from')) {
       rideInfo.direction = 'fromCity';
     }
 
@@ -105,10 +115,16 @@ async function processCityTransferMessage(sock, message, sender, groupId, incomi
       return false;
     }
 
-    const actualUserName = (incomingPushName && incomingPushName.length > 0) ? incomingPushName : 'Unknown User';
-    if (!rideInfo.user || rideInfo.user === 'User Name') {
-      rideInfo.user = actualUserName;
+    // An offer without a resolvable, non-past date can't be shown on the board
+    const rideDate = rideInfo.datetime ? new Date(rideInfo.datetime) : null;
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if (!rideDate || isNaN(rideDate) || rideDate < startOfToday) {
+      logger.info(`Offer from ${sender} has no usable date (${rideInfo.datetime}), not registering ride`);
+      return false;
     }
+
+    // The LLM can't know who sent the message, so always use the WhatsApp push name
+    rideInfo.user = (incomingPushName && incomingPushName.length > 0) ? incomingPushName : 'Unknown User';
 
     const user = await prisma.user.upsert({
       where: { jid: sender },
@@ -120,8 +136,8 @@ async function processCityTransferMessage(sock, message, sender, groupId, incomi
       data: {
         city: config.cityKey,
         direction: rideInfo.direction,
-        datetime: new Date(rideInfo.datetime),
-        originalMsg: rideInfo.original_msg || message,
+        datetime: rideDate,
+        originalMsg: message,
         userId: user.id
       }
     });
@@ -144,22 +160,34 @@ async function processCityTransferMessage(sock, message, sender, groupId, incomi
 }
 
 async function askOpenRouter(currentDateContext, userMessage, config) {
-  const systemPrompt = `You parse WhatsApp messages from a community group in Pipa, Brazil. ${config.promptContext}
+  const city = config.cityName;
+  const systemPrompt = `You classify WhatsApp messages from a community group in Pipa, Brazil. ${config.promptContext}
+Messages may be in English or Portuguese. Every message you receive mentions ${city}, but most messages that mention ${city} are NOT about sharing a ride - people mention the city when talking about shopping, restaurants, doctors, events, banks, where to buy things, etc.
 
 ${currentDateContext}
 
-Your job: determine if the message is an OFFER (someone offering a ride) or a QUESTION (someone looking for a ride).
+Classify the message into exactly one intent:
+- "offer": the SENDER is personally making an upcoming trip between Pipa and ${city} on a specific day ("I'm going", "I'm driving", "I'll take a taxi", "vou para ${city}"). They don't need to explicitly invite anyone: in this group, posting your trip is how you offer seats, often as a short reply to someone who asked (starting with an @mention), e.g. "going to ${city} tomorrow 4:30".
+- "request": the sender is looking for a ride or asking if anyone is going ("anyone going to ${city}?", "alguém vai pra ${city}?", "I need a ride", "how do I get to the airport?").
+- "other": anything else. This includes recommendations or info about places in ${city}, saying where something can be bought ("you can get it in ${city}"), news, events, taxi/transfer driver contacts, past trips, trips without a day, and any message where it's unclear that the sender themselves is making the trip.
+When in doubt, choose "other".
 
-If it's an OFFER, reply ONLY with valid JSON (no markdown, no extra text):
-{"user":"User Name","direction":"To ${config.cityName} or From ${config.cityName}","datetime":"YYYY-MM-DDTHH:MM:SS","original_msg":"original message"}
+Reply ONLY with valid JSON (no markdown, no extra text):
+{"intent":"offer|request|other","direction":"To ${city}|From ${city}|null","datetime":"YYYY-MM-DDTHH:MM:SS or null"}
 
-Rules for resolving dates:
-- Use the current date above to resolve relative expressions like "today", "tomorrow", "next Monday", etc.
-- If no year is mentioned, use the current year. If the resulting date has already passed, use next year.
-- If no time is mentioned, use 00:00:00.
-- "direction" must be either "To ${config.cityName}" (Pipa → ${config.cityName}) or "From ${config.cityName}" (${config.cityName} → Pipa).
+"direction" and "datetime" only matter for "offer"; use null otherwise.
+- "direction": "To ${city}" (Pipa → ${city}) or "From ${city}" (${city} → Pipa).
+- "datetime": use the current date above to resolve relative expressions like "today", "tomorrow", "next Monday", "amanhã", "sexta". If no year is mentioned, use the current year; if that date has already passed, use next year. If no time is mentioned, use 00:00:00. If no day can be determined at all, use null.
 
-If it's a QUESTION (someone asking for a ride), reply with exactly: question intention`;
+Examples:
+"You can get it from ${city} at Gourmetum" → {"intent":"other","direction":null,"datetime":null}
+"Is there a good dentist in ${city}?" → {"intent":"other","direction":null,"datetime":null}
+"Anyone going to ${city} tomorrow?" → {"intent":"request","direction":null,"datetime":null}
+"I went to ${city} yesterday, the traffic was awful" → {"intent":"other","direction":null,"datetime":null}
+"going to ${city} tomorrow 4:30" → {"intent":"offer","direction":"To ${city}","datetime":"<tomorrow's date>T16:30:00"}
+"@5584999999999 going from ${city} airport to Pipa Friday at 4:30 PM" → {"intent":"offer","direction":"From ${city}","datetime":"<Friday's date>T16:30:00"}
+"Driving to ${city} on Friday at 9am, 2 free seats if anyone wants to join" → {"intent":"offer","direction":"To ${city}","datetime":"<Friday's date>T09:00:00"}
+"Vou pegar um táxi de ${city} pra Pipa amanhã às 15h, alguém quer dividir?" → {"intent":"offer","direction":"From ${city}","datetime":"<tomorrow's date>T15:00:00"}`;
 
   const response = await fetch(OPENROUTER_API_URL, {
     method: 'POST',
@@ -175,7 +203,8 @@ If it's a QUESTION (someone asking for a ride), reply with exactly: question int
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage }
       ],
-      temperature: 0
+      temperature: 0,
+      response_format: { type: 'json_object' }
     })
   });
 
